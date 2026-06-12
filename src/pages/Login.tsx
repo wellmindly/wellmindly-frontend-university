@@ -16,10 +16,13 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function Login() {
   const [role, setRole] = useState<Role>("admin");
+  const [mode, setMode] = useState<'login' | 'forgot-password'>('login');
+  const [resetOtpSent, setResetOtpSent] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; otp?: string }>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -39,9 +42,76 @@ export function Login() {
     return Object.keys(next).length === 0;
   };
 
+  const handleSendResetOtp = async () => {
+    setGlobalError(null);
+    const next: { email?: string } = {};
+    const e = email.trim();
+    if (!e) next.email = "Email is required.";
+    else if (!EMAIL_RE.test(e)) next.email = "Enter a valid email address.";
+
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
+
+    setSubmitting(true);
+    try {
+      await api.post("/auth/forgot-password", { email });
+      setResetOtpSent(true);
+    } catch (err: any) {
+      setGlobalError(err.response?.data?.error || "Failed to send reset code. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setGlobalError(null);
+    const next: { email?: string; password?: string; otp?: string } = {};
+    const e = email.trim();
+    if (!e) next.email = "Email is required.";
+    else if (!EMAIL_RE.test(e)) next.email = "Enter a valid email address.";
+    
+    if (!password) next.password = "New password is required.";
+    else if (password.length < 8) next.password = "Password must be at least 8 characters.";
+    
+    if (!otp.trim()) next.otp = "Verification code is required.";
+
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
+
+    setSubmitting(true);
+    try {
+      await api.post("/auth/reset-password", { 
+        email, 
+        otp, 
+        newPassword: password, 
+        role: role === 'admin' ? 'ADMIN' : 'UNIVERSITY' 
+      });
+      setGlobalError(null);
+      alert("Password has been reset successfully! Please sign in with your new password.");
+      setMode('login');
+      setResetOtpSent(false);
+      setOtp("");
+      setPassword("");
+    } catch (err: any) {
+      setGlobalError(err.response?.data?.error || "Failed to reset password. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (ev: FormEvent) => {
     ev.preventDefault();
     setGlobalError(null);
+    
+    if (mode === 'forgot-password') {
+      if (!resetOtpSent) {
+        await handleSendResetOtp();
+      } else {
+        await handleResetPassword();
+      }
+      return;
+    }
+
     if (!validate()) return;
     
     setSubmitting(true);
@@ -237,42 +307,72 @@ export function Login() {
               />
             </Field>
 
+            {/* OTP Field (Shown during forgot-password reset stage) */}
+            {mode === 'forgot-password' && resetOtpSent && (
+              <Field
+                id="otp"
+                label="Verification Code (6-digit OTP)"
+                icon={<Building2 className="h-4.5 w-4.5" />}
+                error={errors.otp}
+                accentColor={accentColor}
+              >
+                <input
+                  id="otp"
+                  type="text"
+                  required
+                  maxLength={6}
+                  placeholder="123456"
+                  value={otp}
+                  aria-invalid={!!errors.otp}
+                  aria-describedby={errors.otp ? "otp-error" : undefined}
+                  onChange={(e) => {
+                    setOtp(e.target.value);
+                    if (errors.otp) setErrors((p) => ({ ...p, otp: undefined }));
+                    clearGlobal();
+                  }}
+                  className="w-full bg-transparent py-3 pl-11 pr-4 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                />
+              </Field>
+            )}
+
             {/* Password Field */}
-            <Field
-              id="password"
-              label="Password"
-              icon={<Lock className="h-4.5 w-4.5" />}
-              error={errors.password}
-              accentColor={accentColor}
-              trailing={
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((s) => !s)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
-                </button>
-              }
-            >
-              <input
+            {(mode !== 'forgot-password' || resetOtpSent) && (
+              <Field
                 id="password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                required
-                placeholder="Enter your password"
-                value={password}
-                aria-invalid={!!errors.password}
-                aria-describedby={errors.password ? "password-error" : undefined}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
-                  clearGlobal();
-                }}
-                className="w-full bg-transparent py-3 pl-11 pr-11 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none"
-              />
-            </Field>
+                label={mode === 'forgot-password' ? "New Password" : "Password"}
+                icon={<Lock className="h-4.5 w-4.5" />}
+                error={errors.password}
+                accentColor={accentColor}
+                trailing={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
+                  </button>
+                }
+              >
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete={mode === 'forgot-password' ? "new-password" : "current-password"}
+                  required
+                  placeholder={mode === 'forgot-password' ? "Enter new password" : "Enter your password"}
+                  value={password}
+                  aria-invalid={!!errors.password}
+                  aria-describedby={errors.password ? "password-error" : undefined}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
+                    clearGlobal();
+                  }}
+                  className="w-full bg-transparent py-3 pl-11 pr-11 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                />
+              </Field>
+            )}
 
             {/* Submit Button with Hover scale and pulse shadow */}
             <motion.button
@@ -289,21 +389,52 @@ export function Login() {
               {submitting ? (
                 <>
                   <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                  Authenticating…
+                  Processing…
                 </>
               ) : (
-                "Sign In to Wellmindly"
+                mode === 'login' 
+                  ? "Sign In to Wellmindly" 
+                  : (resetOtpSent ? "Reset Password" : "Request Reset Code")
               )}
             </motion.button>
 
             {/* Bottom Links */}
             <div className="flex items-center justify-between pt-4 text-xs font-semibold text-slate-400">
-              <a href="#" className="transition-colors hover:text-slate-600">
-                Forgot password?
-              </a>
-              <a href="#" className="transition-colors hover:text-slate-600">
-                Request access
-              </a>
+              {mode === 'forgot-password' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setResetOtpSent(false);
+                    setOtp("");
+                    setErrors({});
+                    setGlobalError(null);
+                  }}
+                  className="transition-colors hover:text-slate-600 cursor-pointer border-none bg-transparent"
+                >
+                  Back to Sign In
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot-password');
+                      setResetOtpSent(false);
+                      setOtp("");
+                      setPassword("");
+                      setErrors({});
+                      setGlobalError(null);
+                    }}
+                    className="transition-colors hover:text-slate-600 cursor-pointer border-none bg-transparent"
+                  >
+                    Forgot password?
+                  </button>
+                  <a href="#" className="transition-colors hover:text-slate-600">
+                    Request access
+                  </a>
+                </>
+              )}
             </div>
           </form>
         </motion.div>
