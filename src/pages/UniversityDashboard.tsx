@@ -575,7 +575,7 @@ export function UniversityDashboard() {
           <div className="flex items-center gap-3">
             <div className="text-right hidden md:block">
               <p className="text-xs font-black text-slate-900 leading-none">{user?.firstName || "University"} {user?.lastName || "Admin"}</p>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">{user?.email || "university@wellmindly.edu"}</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1">{user?.email || "university@wellmindly.com"}</p>
             </div>
             
             <motion.div 
@@ -637,7 +637,7 @@ export function UniversityDashboard() {
             </div>
             <div className="text-left min-w-0">
               <p className="text-xs font-black text-slate-900 leading-none truncate">{user?.firstName || "University"} {user?.lastName || "Admin"}</p>
-              <p className="text-[9px] font-bold text-slate-400 mt-1 truncate">{user?.email || "university@wellmindly.edu"}</p>
+              <p className="text-[9px] font-bold text-slate-400 mt-1 truncate">{user?.email || "university@wellmindly.com"}</p>
             </div>
           </div>
         </aside>
