@@ -4,16 +4,12 @@ import {
   Building2,
   Activity,
   TrendingUp,
-  BrainCircuit,
-  Clock,
   ShieldAlert,
   LogOut,
   Bell,
   Settings,
   Compass,
-  ArrowUpRight,
-  Download,
-  AlertTriangle
+  Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -53,8 +49,6 @@ export function UniversityDashboard() {
     });
 
     // Colors
-    const plum = "#4d295b";
-    const teal = "#14b8a6";
 
     // Header
     doc.setFillColor(77, 41, 91); // Plum
@@ -612,7 +606,7 @@ export function UniversityDashboard() {
           <div className="space-y-6">
             <div className="px-2">
               <span className="text-[9px] font-black text-teal-700 uppercase tracking-widest bg-teal-50 border border-teal-100 px-3 py-1 rounded-full block text-center truncate">
-                {user?.university?.name || "Wellmindly University"}
+                {user?.universityDomain ? (user.universityDomain.split('.')[0].toUpperCase() + " University") : "Wellmindly University"}
               </span>
             </div>
             <nav className="space-y-1">
