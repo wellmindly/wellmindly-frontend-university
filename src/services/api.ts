@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+let rawApiUrl = import.meta.env.VITE_API_URL || 'https://api.wellmindly.com/api';
+if (rawApiUrl.endsWith('/')) rawApiUrl = rawApiUrl.slice(0, -1);
+if (!rawApiUrl.endsWith('/api')) rawApiUrl += '/api';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://api.wellmindly.com/api',
+  baseURL: rawApiUrl,
 });
 
 api.interceptors.request.use(
