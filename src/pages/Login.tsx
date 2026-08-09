@@ -1,5 +1,5 @@
 import React, { useState, type FormEvent, type CSSProperties } from "react";
-import { Mail, Lock, Eye, EyeOff, ShieldCheck, GraduationCap, AlertCircle, Loader2, X, Building2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ShieldCheck, GraduationCap, AlertCircle, CheckCircle2, Loader2, X, Building2 } from "lucide-react";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -24,6 +24,7 @@ export function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; otp?: string }>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const { loginSuccess } = useAuth();
@@ -87,7 +88,7 @@ export function Login() {
         role: role === 'admin' ? 'ADMIN' : 'UNIVERSITY' 
       });
       setGlobalError(null);
-      alert("Password has been reset successfully! Please sign in with your new password.");
+      setGlobalSuccess("Password has been reset successfully! Please sign in with your new password.");
       setMode('login');
       setResetOtpSent(false);
       setOtp("");
@@ -193,6 +194,32 @@ export function Login() {
                 onClick={() => setGlobalError(null)}
                 aria-label="Dismiss error"
                 className="rounded-full p-1 text-red-500 hover:bg-red-100 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Global Success Banner */}
+        <AnimatePresence>
+          {globalSuccess && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              role="alert"
+              className="absolute -top-16 left-0 right-0 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg shadow-emerald-100 backdrop-blur-md z-20"
+            >
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>{globalSuccess}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGlobalSuccess(null)}
+                aria-label="Dismiss message"
+                className="rounded-full p-1 text-emerald-600 hover:bg-emerald-100 transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
