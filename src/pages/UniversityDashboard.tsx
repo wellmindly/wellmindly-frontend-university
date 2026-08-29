@@ -63,7 +63,7 @@ export function UniversityDashboard() {
     doc.setFontSize(10);
     doc.setTextColor(220, 220, 220);
     doc.text("Anonymized aggregate reports for campus administration", 15, 25);
-    doc.text("Gulf International University — Spring Cohort", 15, 30);
+    doc.text("Gulf International University - Spring Cohort", 15, 30);
 
     // Metadata
     doc.setFillColor(248, 250, 252);
@@ -275,10 +275,10 @@ export function UniversityDashboard() {
             <p className="text-[11px] text-slate-400 font-semibold mt-1">Average wellbeing index, weekly</p>
           </div>
           <div className="space-y-4">
-            {renderProgressBar("Wk 1 — Orientation", 72, "bg-teal-500", "7.2 / 10")}
-            {renderProgressBar("Wk 6 — Mid-term", 58, "bg-amber-500", "5.8 / 10")}
-            {renderProgressBar("Wk 10 — Pre-exam", 44, "bg-rose-500", "4.4 / 10")}
-            {renderProgressBar("Wk 13 — Post-results", 63, "bg-amber-500", "6.3 / 10")}
+            {renderProgressBar("Wk 1 - Orientation", 72, "bg-teal-500", "7.2 / 10")}
+            {renderProgressBar("Wk 6 - Mid-term", 58, "bg-amber-500", "5.8 / 10")}
+            {renderProgressBar("Wk 10 - Pre-exam", 44, "bg-rose-500", "4.4 / 10")}
+            {renderProgressBar("Wk 13 - Post-results", 63, "bg-amber-500", "6.3 / 10")}
           </div>
         </div>
       </div>
