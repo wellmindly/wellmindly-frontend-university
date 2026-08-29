@@ -1,6 +1,6 @@
 import React, { useState, type FormEvent, type CSSProperties } from "react";
 import { Mail, Lock, Eye, EyeOff, ShieldCheck, GraduationCap, AlertCircle, CheckCircle2, Loader2, X, Building2 } from "lucide-react";
-import api from "../services/api";
+import api, { apiErrorMessage } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -58,7 +58,7 @@ export function Login() {
       await api.post("/auth/forgot-password", { email });
       setResetOtpSent(true);
     } catch (err: any) {
-      setGlobalError(err.response?.data?.error || "Failed to send reset code. Please try again.");
+      setGlobalError(apiErrorMessage(err, "Failed to send reset code. Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -94,7 +94,7 @@ export function Login() {
       setOtp("");
       setPassword("");
     } catch (err: any) {
-      setGlobalError(err.response?.data?.error || "Failed to reset password. Please try again.");
+      setGlobalError(apiErrorMessage(err, "Failed to reset password. Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -127,7 +127,7 @@ export function Login() {
       loginSuccess(token, user);
       navigate('/dashboard'); // redirect on success
     } catch (err: any) {
-      setGlobalError(err.response?.data?.error || "Incorrect or invalid credentials.");
+      setGlobalError(apiErrorMessage(err, "Incorrect or invalid credentials."));
     } finally {
       setSubmitting(false);
     }
