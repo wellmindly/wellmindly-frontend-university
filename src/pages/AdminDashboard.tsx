@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
-import { 
-  Users, 
-  FileText, 
-  AlertTriangle, 
-  Search, 
-  Filter, 
-  MoreVertical, 
+import {
+  Users,
+  FileText,
+  Search,
+  Filter,
+  MoreVertical,
   Activity,
   LogOut,
   Bell,
@@ -14,41 +13,92 @@ import {
   Shield,
   Download,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  HeartPulse
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import api, { apiErrorMessage } from "../services/api";
+import type { AdminMetrics, AdminStudent } from "../types";
+
+/** A dash, not a zero: a failed fetch must not read as a real measurement of nothing. */
+const EM_DASH = "—";
 
 export function AdminDashboard() {
   const { user, logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
 
-  // Audit Data Fields: Student Name, Registered University Affiliate, Latest Test Matrix, Last Active Timestamp
-  const [students] = useState([
-    { id: "STU-001", name: "Siddharth Malani", affiliate: "MIT", testMatrix: "Baseline 101", lastActive: "2026-05-29 14:30" },
-    { id: "STU-002", name: "Emma Watson", affiliate: "Stanford", testMatrix: "Stress Inventory B", lastActive: "2026-05-28 09:15" },
-    { id: "STU-003", name: "James Chen", affiliate: "Harvard", testMatrix: "Baseline 101", lastActive: "2026-05-29 16:45" },
-    { id: "STU-004", name: "Sophia Martinez", affiliate: "MIT", testMatrix: "Anxiety Scale C", lastActive: "2026-05-25 11:20" },
-    { id: "STU-005", name: "Liam O'Connor", affiliate: "NYU", testMatrix: "Baseline 101", lastActive: "2026-04-10 08:00" },
-  ]);
+  const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
+  const [students, setStudents] = useState<AdminStudent[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  // Both endpoints are ADMIN-only (backend/src/routes/admin.ts) and are the same
+  // ones the standalone admin panel reads, so this screen shows the real system,
+  // not a parallel set of figures. See tasks/BUGS.md B-161.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [m, s] = await Promise.all([
+          api.get<AdminMetrics>("/admin/metrics"),
+          api.get<{ students: AdminStudent[] }>("/admin/students"),
+        ]);
+        if (!cancelled) {
+          setMetrics(m.data);
+          setStudents(s.data?.students ?? []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(apiErrorMessage(err, "System metrics are unavailable. Check your connection and try again."));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const num = (v: number | null | undefined) =>
+    typeof v === "number" && Number.isFinite(v) ? v.toLocaleString() : EM_DASH;
+
+  const registered = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? EM_DASH
+      : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const rows = useMemo(
+    () =>
+      students.map((s) => ({
+        id: s.id,
+        name: `${s.firstName ?? ""} ${s.lastName ?? ""}`.trim() || s.email,
+        email: s.email,
+        affiliate: s.university?.name || "Unaffiliated",
+        createdAt: s.createdAt,
+        registered: registered(s.createdAt),
+      })),
+    [students]
+  );
 
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [filters, setFilters] = useState<{ [key: string]: string }>({
     name: "",
     affiliate: "",
-    testMatrix: "",
-    lastActive: ""
+    registered: ""
   });
 
   // Apply filters and sorting
-  let processedData = [...students];
-  
+  let processedData = [...rows];
+
   // Search query filter
   if (searchQuery.trim()) {
     const query = searchQuery.toLowerCase();
-    processedData = processedData.filter(student => 
+    processedData = processedData.filter(student =>
       student.name.toLowerCase().includes(query) ||
-      student.id.toLowerCase().includes(query) ||
+      student.email.toLowerCase().includes(query) ||
       student.affiliate.toLowerCase().includes(query)
     );
   }
@@ -56,17 +106,18 @@ export function AdminDashboard() {
   // Column specific filters
   Object.keys(filters).forEach(key => {
     if (filters[key]) {
-      processedData = processedData.filter(student => 
+      processedData = processedData.filter(student =>
         String(student[key as keyof typeof student]).toLowerCase().includes(filters[key].toLowerCase())
       );
     }
   });
 
-  // Sorting
+  // Sorting. `registered` is a formatted string, so sort it on the raw timestamp.
   if (sortConfig) {
     processedData.sort((a, b) => {
-      const aVal = a[sortConfig.key as keyof typeof a];
-      const bVal = b[sortConfig.key as keyof typeof b];
+      const k = sortConfig.key === 'registered' ? 'createdAt' : sortConfig.key;
+      const aVal = a[k as keyof typeof a];
+      const bVal = b[k as keyof typeof b];
       if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
@@ -85,10 +136,38 @@ export function AdminDashboard() {
     setFilters({
       name: "",
       affiliate: "",
-      testMatrix: "",
-      lastActive: ""
+      registered: ""
     });
     setSearchQuery("");
+  };
+
+  /** Exports exactly the rows currently on screen — no invented columns, no server round-trip. */
+  const exportCsv = () => {
+    const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [
+      ["Student", "Email", "University Affiliate", "Registered"].map(esc).join(","),
+      ...processedData.map((r) => [r.name, r.email, r.affiliate, r.registered].map(esc).join(",")),
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `WellMindly_Student_Directory_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const copy = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      window.setTimeout(() => setCopied(null), 1600);
+    } catch {
+      // Clipboard access can be refused (insecure context, denied permission).
+      // Say so rather than showing a success state for something that did not happen.
+      setCopied("Clipboard unavailable");
+      window.setTimeout(() => setCopied(null), 2400);
+    }
+    setActiveDropdownId(null);
   };
 
   // Stagger entry animations
@@ -127,36 +206,39 @@ export function AdminDashboard() {
     <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans selection:bg-indigo-100">
       
       {/* Top Navigation / App Bar */}
-      <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-30 shadow-sm">
-        <div className="flex items-center gap-3">
-          <motion.div 
+      <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0 sticky top-0 z-30 shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <motion.div
             whileHover={{ scale: 1.05, rotate: [0, -10, 10, 0] }}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shadow-md shadow-slate-900/10 cursor-pointer"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shadow-md shadow-slate-900/10 cursor-pointer shrink-0"
           >
             <Shield className="h-5 w-5" />
           </motion.div>
-          <div>
-            <span className="font-extrabold text-slate-900 tracking-tight text-sm sm:text-base">WellMindly Admin Console</span>
-            <span className="ml-3 inline-flex px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-extrabold border border-indigo-100 uppercase tracking-wider">
+          <div className="flex items-baseline gap-3 min-w-0">
+            <span className="font-extrabold text-slate-900 tracking-tight text-sm sm:text-base truncate">WellMindly Admin Console</span>
+            <span className="hidden lg:inline-flex shrink-0 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-extrabold border border-indigo-100 uppercase tracking-wider">
               System Administrator
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 sm:gap-4">
-          <motion.button 
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors bg-slate-50 rounded-xl cursor-pointer"
+            aria-label="Notifications"
           >
+            {/* No unread indicator: there is no notification feed behind this button, so a
+                red dot would be asserting unread items that do not exist. */}
             <Bell className="h-5 w-5" />
-            <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
           </motion.button>
           
-          <motion.button 
+          <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="p-2 text-slate-400 hover:text-slate-600 transition-colors bg-slate-50 rounded-xl cursor-pointer"
+            aria-label="Settings"
           >
             <Settings className="h-5 w-5" />
           </motion.button>
@@ -212,14 +294,24 @@ export function AdminDashboard() {
             </div>
           </motion.div>
 
+          {loadError && (
+            <motion.div
+              variants={cardVariants}
+              className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 text-xs font-bold text-red-800"
+              role="alert"
+            >
+              {loadError}
+            </motion.div>
+          )}
+
           {/* TOP BAR: System-wide Health Aggregates */}
-          <motion.div 
+          <motion.div
             variants={cardGridVariants}
             className="grid grid-cols-1 md:grid-cols-3 gap-6"
           >
             
             {/* Aggregate 1: Total Students Registered */}
-            <motion.div 
+            <motion.div
               variants={cardVariants}
               whileHover={{ y: -6, scale: 1.015, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05)" }}
               className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex items-center gap-5 transition-shadow cursor-pointer relative overflow-hidden"
@@ -228,16 +320,23 @@ export function AdminDashboard() {
                 <Users className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5">Total Students</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5">Registered Students</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-slate-900 tracking-tight">12,450</span>
-                  <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">+12% this mo</span>
+                  <span className="text-3xl font-black text-slate-900 tracking-tight">
+                    {loading ? <span className="text-slate-300">···</span> : loadError ? EM_DASH : num(students.length)}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-400">
+                    {/* "accounts", not "students": totalUniqueUsers counts every account with
+                        a submission, including staff. It read 12 against 11 students because
+                        an ADMIN account has quiz results — see tasks/BUGS.md B-161. */}
+                    {num(metrics?.totalUniqueUsers)} accounts have submitted
+                  </span>
                 </div>
               </div>
             </motion.div>
 
             {/* Aggregate 2: Assessments Completed Globally */}
-            <motion.div 
+            <motion.div
               variants={cardVariants}
               whileHover={{ y: -6, scale: 1.015, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05)" }}
               className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex items-center gap-5 transition-shadow cursor-pointer relative overflow-hidden"
@@ -248,27 +347,42 @@ export function AdminDashboard() {
               <div>
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5">Global Assessments</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-slate-900 tracking-tight">8,932</span>
-                  <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">+340 this wk</span>
+                  <span className="text-3xl font-black text-slate-900 tracking-tight">
+                    {loading ? <span className="text-slate-300">···</span> : num(metrics?.totalSubmissions)}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-400">
+                    across {num(metrics?.quizMetrics?.length)} instruments
+                  </span>
                 </div>
               </div>
             </motion.div>
 
-            {/* Aggregate 3: Active System Alerts */}
-            <motion.div 
+            {/* Aggregate 3: Daily check-in mood. Not an alert count — the classification
+                column this console would have to match on is unreliable (BUGS.md B-158),
+                so a "flagged for audit" figure would be a guess dressed as a number. */}
+            <motion.div
               variants={cardVariants}
-              whileHover={{ y: -6, scale: 1.015, boxShadow: "0 20px 25px -5px rgb(239 68 68 / 0.08), 0 8px 10px -6px rgb(239 68 68 / 0.08)" }}
-              className="bg-white rounded-3xl p-6 border border-red-100 shadow-sm flex items-center gap-5 transition-shadow cursor-pointer relative overflow-hidden"
+              whileHover={{ y: -6, scale: 1.015, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05)" }}
+              className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex items-center gap-5 transition-shadow cursor-pointer relative overflow-hidden"
             >
-              <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500" />
-              <div className="h-14 w-14 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center shrink-0 shadow-inner">
-                <AlertTriangle className="h-6 w-6 animate-pulse" />
+              <div className="h-14 w-14 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 shadow-inner">
+                <HeartPulse className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-xs font-black text-red-600/80 uppercase tracking-widest mb-1.5">Active Alerts</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5">Avg Daily Mood</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-slate-900 tracking-tight">24</span>
-                  <span className="text-xs font-semibold text-slate-400">flagged for audit</span>
+                  <span className="text-3xl font-black text-slate-900 tracking-tight">
+                    {loading ? (
+                      <span className="text-slate-300">···</span>
+                    ) : typeof metrics?.avgDailyMood === "number" ? (
+                      `${metrics.avgDailyMood.toFixed(1)} / 5.0`
+                    ) : (
+                      EM_DASH
+                    )}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-400">
+                    {num(metrics?.totalCheckins)} check-ins
+                  </span>
                 </div>
               </div>
             </motion.div>
@@ -282,22 +396,22 @@ export function AdminDashboard() {
             {/* Table Toolbar */}
             <div className="p-6 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-5 bg-slate-50/40">
               <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2.5">
-                <Activity className="h-5 w-5 text-indigo-500" /> Administrative Audit & Risk Directory
+                <Activity className="h-5 w-5 text-indigo-500" /> Registered Student Directory
               </h2>
               
               <div className="flex flex-wrap items-center gap-3">
                 <div className="relative flex-1 sm:flex-none">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <input 
-                    type="text" 
-                    placeholder="Search name, ID, affiliate..." 
+                  <input
+                    type="text"
+                    placeholder="Search name, email, affiliate..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all w-full sm:w-60 shadow-sm"
                   />
                 </div>
-                
-                <motion.button 
+
+                <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={clearFilters}
@@ -305,13 +419,15 @@ export function AdminDashboard() {
                 >
                   <Filter className="h-3.5 w-3.5" /> Clear Filters
                 </motion.button>
-                
-                <motion.button 
+
+                <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white border border-transparent rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md cursor-pointer"
+                  onClick={exportCsv}
+                  disabled={processedData.length === 0}
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white border border-transparent rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Download className="h-3.5 w-3.5" /> Export Audit
+                  <Download className="h-3.5 w-3.5" /> Export CSV
                 </motion.button>
               </div>
             </div>
@@ -322,22 +438,22 @@ export function AdminDashboard() {
                 <thead className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500">
                   <tr>
                     {/* Column 1: Student Name */}
-                    <th className="px-6 py-4 align-top w-[25%]">
+                    <th className="px-6 py-4 align-top w-[34%]">
                       <div className="flex items-center justify-between cursor-pointer hover:text-slate-800 transition-colors font-bold uppercase tracking-wider text-[10px]" onClick={() => handleSort('name')}>
-                        <span>Student Name</span>
+                        <span>Student</span>
                         {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-indigo-600"/> : <ChevronDown className="h-4 w-4 text-indigo-600"/>) : <ChevronUp className="h-4 w-4 opacity-20"/>}
                       </div>
-                      <input 
-                        type="text" 
-                        placeholder="Filter name..." 
+                      <input
+                        type="text"
+                        placeholder="Filter name..."
                         className="mt-3.5 w-full px-3 py-2 text-[11px] border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 font-semibold normal-case bg-white shadow-sm transition-all focus:ring-4 focus:ring-indigo-50"
                         value={filters.name}
                         onChange={(e) => setFilters({...filters, name: e.target.value})}
                       />
                     </th>
-                    
+
                     {/* Column 2: Registered University Affiliate */}
-                    <th className="px-6 py-4 align-top w-[25%]">
+                    <th className="px-6 py-4 align-top w-[28%]">
                       <div className="flex items-center justify-between cursor-pointer hover:text-slate-800 transition-colors font-bold uppercase tracking-wider text-[10px]" onClick={() => handleSort('affiliate')}>
                         <span>University Affiliate</span>
                         {sortConfig?.key === 'affiliate' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-indigo-600"/> : <ChevronDown className="h-4 w-4 text-indigo-600"/>) : <ChevronUp className="h-4 w-4 opacity-20"/>}
@@ -351,38 +467,26 @@ export function AdminDashboard() {
                       />
                     </th>
 
-                    {/* Column 3: Latest Test Matrix */}
-                    <th className="px-6 py-4 align-top w-[22%]">
-                      <div className="flex items-center justify-between cursor-pointer hover:text-slate-800 transition-colors font-bold uppercase tracking-wider text-[10px]" onClick={() => handleSort('testMatrix')}>
-                        <span>Latest Test Matrix</span>
-                        {sortConfig?.key === 'testMatrix' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-indigo-600"/> : <ChevronDown className="h-4 w-4 text-indigo-600"/>) : <ChevronUp className="h-4 w-4 opacity-20"/>}
+                    {/* Column 3: Registration date. The two columns that used to sit here —
+                        "Latest Test Matrix" and "Last Active" — had no source: GET
+                        /api/admin/students returns neither a per-student quiz summary nor a
+                        last-activity timestamp. See tasks/BUGS.md B-161. */}
+                    <th className="px-6 py-4 align-top w-[24%]">
+                      <div className="flex items-center justify-between cursor-pointer hover:text-slate-800 transition-colors font-bold uppercase tracking-wider text-[10px]" onClick={() => handleSort('registered')}>
+                        <span>Registered</span>
+                        {sortConfig?.key === 'registered' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-indigo-600"/> : <ChevronDown className="h-4 w-4 text-indigo-600"/>) : <ChevronUp className="h-4 w-4 opacity-20"/>}
                       </div>
-                      <input 
-                        type="text" 
-                        placeholder="Filter matrix..." 
+                      <input
+                        type="text"
+                        placeholder="Filter date..."
                         className="mt-3.5 w-full px-3 py-2 text-[11px] border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 font-semibold normal-case bg-white shadow-sm transition-all focus:ring-4 focus:ring-indigo-50"
-                        value={filters.testMatrix}
-                        onChange={(e) => setFilters({...filters, testMatrix: e.target.value})}
+                        value={filters.registered}
+                        onChange={(e) => setFilters({...filters, registered: e.target.value})}
                       />
                     </th>
 
-                    {/* Column 4: Last Active Timestamp */}
-                    <th className="px-6 py-4 align-top w-[18%]">
-                      <div className="flex items-center justify-between cursor-pointer hover:text-slate-800 transition-colors font-bold uppercase tracking-wider text-[10px]" onClick={() => handleSort('lastActive')}>
-                        <span>Last Active</span>
-                        {sortConfig?.key === 'lastActive' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-indigo-600"/> : <ChevronDown className="h-4 w-4 text-indigo-600"/>) : <ChevronUp className="h-4 w-4 opacity-20"/>}
-                      </div>
-                      <input 
-                        type="text" 
-                        placeholder="Filter timestamp..." 
-                        className="mt-3.5 w-full px-3 py-2 text-[11px] border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 font-semibold normal-case bg-white shadow-sm transition-all focus:ring-4 focus:ring-indigo-50"
-                        value={filters.lastActive}
-                        onChange={(e) => setFilters({...filters, lastActive: e.target.value})}
-                      />
-                    </th>
-
-                    {/* Column 5: Actions */}
-                    <th className="px-6 py-4 align-top text-right w-[10%]">
+                    {/* Column 4: Actions */}
+                    <th className="px-6 py-4 align-top text-right w-[14%]">
                       <div className="font-bold uppercase tracking-wider text-[10px] pt-1.5">Actions</div>
                     </th>
                   </tr>
@@ -402,20 +506,15 @@ export function AdminDashboard() {
                         >
                           <td className="px-6 py-4.5">
                             <p className="font-extrabold text-slate-800 group-hover/row:text-indigo-600 transition-colors">{student.name}</p>
-                            <p className="text-slate-400 text-[10px] font-bold mt-0.5">{student.id}</p>
+                            <p className="text-slate-400 text-[10px] font-bold mt-0.5">{student.email}</p>
                           </td>
                           <td className="px-6 py-4.5">
                             <span className="inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200/60 shadow-sm">
                               {student.affiliate}
                             </span>
                           </td>
-                          <td className="px-6 py-4.5">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50/50 border border-indigo-100/50">
-                              {student.testMatrix}
-                            </span>
-                          </td>
                           <td className="px-6 py-4.5 text-slate-500 font-bold font-mono text-xs">
-                            {student.lastActive}
+                            {student.registered}
                           </td>
                           <td className="px-6 py-4.5 text-right relative">
                             <motion.button 
@@ -440,26 +539,25 @@ export function AdminDashboard() {
                                     animate={{ opacity: 1, scale: 1, y: 0 }}
                                     exit={{ opacity: 0, scale: 0.95, y: -10 }}
                                     transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                                    className="absolute right-12 top-2 w-40 bg-white rounded-2xl shadow-xl shadow-slate-200/80 border border-slate-100 py-2 z-40 text-left overflow-hidden"
+                                    className="absolute right-12 top-2 w-48 bg-white rounded-2xl shadow-xl shadow-slate-200/80 border border-slate-100 py-2 z-40 text-left overflow-hidden"
                                   >
-                                    <button 
-                                      onClick={() => setActiveDropdownId(null)}
+                                    {/* Only actions this app can actually carry out. The
+                                        previous menu offered "Send Audit Email" and "Revoke
+                                        Access"; neither had an endpoint and both silently did
+                                        nothing. Student-level detail belongs in the dedicated
+                                        admin console, not in the portal whose contract is
+                                        aggregate-only. See tasks/BUGS.md B-161. */}
+                                    <button
+                                      onClick={() => copy("Email copied", student.email)}
                                       className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors cursor-pointer"
                                     >
-                                      View Details
+                                      Copy email
                                     </button>
-                                    <button 
-                                      onClick={() => setActiveDropdownId(null)}
+                                    <button
+                                      onClick={() => copy("Student ID copied", student.id)}
                                       className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors cursor-pointer"
                                     >
-                                      Send Audit Email
-                                    </button>
-                                    <div className="h-px bg-slate-100 my-1" />
-                                    <button 
-                                      onClick={() => setActiveDropdownId(null)}
-                                      className="w-full text-left px-4 py-2.5 text-xs font-black text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                                    >
-                                      Revoke Access
+                                      Copy student ID
                                     </button>
                                   </motion.div>
                                 </>
@@ -470,8 +568,14 @@ export function AdminDashboard() {
                       ))
                     ) : (
                       <motion.tr layout>
-                        <td colSpan={5} className="px-6 py-16 text-center text-slate-400 font-bold text-sm">
-                          No audited students match the current filters.
+                        <td colSpan={4} className="px-6 py-16 text-center text-slate-400 font-bold text-sm">
+                          {loading
+                            ? "Loading the student directory…"
+                            : loadError
+                            ? "The directory could not be loaded."
+                            : students.length === 0
+                            ? "No students are registered yet."
+                            : "No students match the current filters."}
                         </td>
                       </motion.tr>
                     )}
@@ -480,25 +584,28 @@ export function AdminDashboard() {
               </table>
             </div>
             
-            {/* Table Pagination / Footer */}
-            <div className="p-5 border-t border-slate-150 bg-white flex items-center justify-between text-xs font-bold text-slate-400">
-              <p>Showing 1 to {processedData.length} of 12,450 audited students</p>
-              <div className="flex items-center gap-2">
-                <motion.button 
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="px-3.5 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
-                >
-                  Previous
-                </motion.button>
-                <motion.button 
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="px-3.5 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
-                >
-                  Next
-                </motion.button>
-              </div>
+            {/* Table Footer. The whole directory is fetched in one call, so there is nothing
+                to page through — showing Previous/Next would be two more controls that do
+                nothing. The count is the real row count, not a fixed literal. */}
+            <div className="p-5 border-t border-slate-150 bg-white flex items-center justify-between gap-4 text-xs font-bold text-slate-400">
+              <p>
+                {processedData.length === students.length
+                  ? `${students.length} registered student${students.length === 1 ? "" : "s"}`
+                  : `${processedData.length} of ${students.length} students match`}
+              </p>
+              <AnimatePresence>
+                {copied && (
+                  <motion.span
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    className="text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg"
+                    role="status"
+                  >
+                    {copied}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </div>
           </motion.div>
 

@@ -43,4 +43,22 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+
+  /*
+   * Reduced-motion support. Framer Motion is handled separately by
+   * <MotionConfig reducedMotion="user"> in App.tsx; this covers the CSS side —
+   * Tailwind's animate-* utilities and any transition, which keep running
+   * otherwise. Duration is collapsed rather than set to `none` so animations
+   * still reach their end state and nothing is left mid-transition.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

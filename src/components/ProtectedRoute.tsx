@@ -12,10 +12,22 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   const location = useLocation();
 
   if (isLoading) {
-    // Show a basic Tailwind loading spinner while auth context rehydrates
+    /*
+     * Loading state while the auth context rehydrates. The spinner is decorative
+     * and is hidden from assistive tech; the visible "Checking your session…"
+     * label is what actually conveys the state — necessary because the global
+     * reduced-motion rule in index.css collapses the spin, so motion alone
+     * cannot be the only signal that something is happening.
+     */
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50">
+        <div
+          aria-hidden="true"
+          className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"
+        ></div>
+        <p role="status" aria-live="polite" className="text-sm font-semibold text-gray-500">
+          Checking your session…
+        </p>
       </div>
     );
   }
