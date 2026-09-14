@@ -162,7 +162,7 @@ export function UniversityDashboard() {
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(9.5);
     doc.setTextColor(71, 85, 105);
-    const summaryText = "WellMindly provides a safe, anonymous precursor to clinical support systems. This report compiles macroscopic, aggregate trends for the cohort named above. Campus administration receives aggregates only: no individual names, emails, check-ins, chat logs or quiz answers are exposed by the reporting API.";
+    const summaryText = "WellMindly provides a safe, anonymous precursor to campus care support systems. This report compiles macroscopic, aggregate trends for the cohort named above. Campus administration receives aggregates only: no individual names, emails, check-ins, chat logs or quiz answers are exposed by the reporting API.";
     const splitSummary = doc.splitTextToSize(summaryText, 180);
     doc.text(splitSummary, 15, 101);
 
