@@ -7,6 +7,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { UniversityDashboard } from './pages/UniversityDashboard';
 import { useAuth } from './context/AuthContext';
+import { AnalyticsTracker } from './components/AnalyticsTracker';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
 
 function DashboardSwitcher() {
   const { user } = useAuth();
@@ -20,16 +22,11 @@ function DashboardSwitcher() {
 
 function App() {
   return (
-    /*
-     * reducedMotion="user" makes every motion.* element in this app honour the
-     * OS "reduce motion" setting: transform and layout animations are dropped
-     * while opacity still cross-fades, so entrances and hovers stay legible
-     * without moving. Applied once here rather than per-component so no future
-     * screen can forget it. The CSS side (Tailwind animate-*) is in index.css.
-     */
     <MotionConfig reducedMotion="user">
       <AuthProvider>
         <BrowserRouter>
+          <AnalyticsTracker />
+          <CookieConsentBanner />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route

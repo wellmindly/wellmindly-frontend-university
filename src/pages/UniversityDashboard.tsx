@@ -9,8 +9,10 @@ import {
   Bell,
   Settings,
   Compass,
-  Download
+  Download,
+  Shield
 } from "lucide-react";
+import { openConsentPreferences } from "../lib/analytics";
 import { motion, AnimatePresence } from "framer-motion";
 import { jsPDF } from "jspdf";
 import api, { apiErrorMessage } from "../services/api";
@@ -770,6 +772,16 @@ export function UniversityDashboard() {
             >
               {(user?.firstName?.[0] || "U")}{(user?.lastName?.[0] || "A")}
             </motion.div>
+            
+            <motion.button 
+              whileHover={{ scale: 1.1, color: "var(--color-teal-700)" }}
+              whileTap={{ scale: 0.9 }}
+              onClick={openConsentPreferences} 
+              className="p-2 text-slate-400 hover:text-teal-700 transition-colors rounded-xl bg-slate-50 cursor-pointer border-none"
+              title="Cookie & Privacy Preferences"
+            >
+              <Shield className="h-5 w-5" />
+            </motion.button>
             
             <motion.button 
               whileHover={{ scale: 1.1, color: "var(--color-red-600)" }}
